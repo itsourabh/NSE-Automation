@@ -1,0 +1,51 @@
+**REGION Try
+BLOCK 'File Creation'
+ON BLOCK ERROR all
+
+END
+    SET EventDescription TO $'''%''%'''
+    SET blnErrorFlag TO False
+    SET blnScreenShots TO False
+    DateTime.GetCurrentDateTime.Local DateTimeFormat: DateTime.DateTimeFormat.DateAndTime CurrentDateTime=> CurrentDateTime
+    Text.ConvertDateTimeToText.FromCustomDateTime DateTime: CurrentDateTime CustomFormat: $'''ddMMyyy''' Result=> FormattedDateTime
+    SET blnCriticalFlag TO False
+    **REGION File Validation
+    File.GetPathPart File: $'''%gbl_strTempFolder%\\%gbl_strdictConfig['InputFile']%''' FileName=> FileName2
+    IF FileName2 <> gbl_strdictConfig['InputFile'] THEN
+        EXIT Code: 0 ErrorMessage: gbl_strdictConfig['ERROR-004']
+    ELSE
+        File.Move Files: $'''%gbl_strTempFolder%\\%gbl_strdictConfig['InputFile']%''' Destination: gbl_strInputFolder IfFileExists: File.IfExists.DoNothing MovedFiles=> MovedFiles3
+    END
+    **ENDREGION
+    **REGION Column Validation
+    SET strFilePath TO $'''%gbl_strInputFolder%\\%gbl_strdictConfig['InputFile']%'''
+    Database.Connect ConnectionString: $'''\"Provider=MSDASQL.1;Persist Security Info=False;Extended Properties=\"DSN=Excel Files;DBQ=%strFilePath%;DefaultDir=%gbl_strInputFolder%;DriverId=1046;MaxBufferSize=2048;PageTimeout=5;\"''' Connection=> SQLConnection
+    Database.ExecuteSqlStatement.Execute Connection: SQLConnection Statement: $'''SELECT * FROM [Sheet1$]''' Timeout: 30 Result=> tblInput
+    Database.Close Connection: SQLConnection
+    Text.SplitText.SplitWithDelimiter Text: gbl_strdictConfig['InputColumn'] CustomDelimiter: $''',''' IsRegEx: False Result=> lstColumns
+    SET colIndex TO 0
+    LOOP FOREACH recCol IN lstColumns
+        IF NotContains(tblInput, recCol, False) THEN
+            SET blnCriticalFlag TO True
+            EXIT Code: 0 ErrorMessage: $'''%recCol% %gbl_strdictConfig['ERROR-005']%'''
+        END
+        Variables.IncreaseVariable Value: colIndex IncrementValue: 1
+    END
+    **ENDREGION
+END
+**ENDREGION
+**REGION Catch
+ERROR => strLastError
+IF IsNotEmpty(strLastError.Message) THEN
+    SET EventDescription TO strLastError.Message
+    SET EventLine TO strLastError.ActionIndex
+    SET EventName TO strLastError.ActionName
+    IF blnScreenShots = $'''True''' THEN
+        CALL SF005_ScreentShots
+    END
+    File.WriteText File: strAuditLog TextToWrite: $'''%TimeStamp%,%gbl_strProcess%,%MachineName%,%UserName%,BSF001-File and Column,INFO,,%EventDescription%,%EventLine%,,%EventName%''' AppendNewLine: True IfFileExists: File.IfFileExists.Append Encoding: File.FileEncoding.UTF8
+    IF blnCriticalFlag = $'''True''' THEN
+        CALL 'BSF003-Send Mail'
+    END
+END
+**ENDREGION

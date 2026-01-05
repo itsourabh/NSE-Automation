@@ -1,0 +1,49 @@
+
+FUNCTION 'BSF003-Send Mail' GLOBAL
+    **REGION Try
+    BLOCK 'File Creation'
+ON BLOCK ERROR all
+
+END
+        SET EventDescription TO $'''%''%'''
+        SET blnErrorFlag TO False
+        SET blnScreenShots TO False
+        DateTime.GetCurrentDateTime.Local DateTimeFormat: DateTime.DateTimeFormat.DateAndTime CurrentDateTime=> CurrentDateTime
+        Text.ConvertDateTimeToText.FromCustomDateTime DateTime: CurrentDateTime CustomFormat: $'''ddMMyyy''' Result=> FormattedDateTime
+        Text.SplitText.SplitWithDelimiter Text: gbl_dictConfig['KillProcess'] CustomDelimiter: $''',''' IsRegEx: False Result=> lstKill
+        **REGION Send Mail
+        Outlook.Launch Instance=> OutlookInstance
+        WAIT nbrWait
+        IF blnCriticalFlag = $'''True''' THEN
+            Outlook.SendEmailThroughOutlook.SendEmail Instance: OutlookInstance Account: gbl_dictConfig['EmailSender'] SendTo: gbl_dictConfig['EmailReceiver'] Subject: gbl_dictConfig['MSubject'] Body: $'''Hi Team,
+
+Error : %recCol% %gbl_dictConfig['ERROR-005']%
+File : %gbl_dictConfig['InputFile']%
+
+%gbl_dictConfig['MBody']%''' IsBodyHtml: False IsDraft: False
+            WAIT nbrWait
+        ELSE IF blnCriticalShots = $'''True''' THEN
+            Outlook.SendEmailThroughOutlook.SendEmail Instance: OutlookInstance Account: gbl_dictConfig['EmailSender'] SendTo: gbl_dictConfig['EmailReceiver'] Subject: gbl_dictConfig['MSubject'] Body: $'''Hi Team,
+
+Error : %varWeb%
+
+%gbl_dictConfig['WBody']%''' IsBodyHtml: False IsDraft: False Attachments: $'''\"%gbl_strScreenshotsFolder%\\%FormattedDateTime%.png\"'''
+            WAIT nbrWait
+        ELSE
+            Outlook.SendEmailThroughOutlook.SendEmail Instance: OutlookInstance Account: gbl_dictConfig['EmailSender'] SendTo: gbl_dictConfig['EmailReceiver'] Subject: gbl_dictConfig['Subject'] Body: gbl_dictConfig['Body'] IsBodyHtml: False IsDraft: False Attachments: $'''\"%strFilePathO%\" \"%strTransactionLog%\"'''
+            WAIT nbrWait
+        END
+        Outlook.Close Instance: OutlookInstance
+        **ENDREGION
+    END
+    **ENDREGION
+    **REGION Catch
+    ERROR => strLastError
+    IF IsNotEmpty(strLastError.Message) THEN
+        SET EventDescription TO strLastError.Message
+        SET EventLine TO strLastError.ActionIndex
+        SET EventName TO strLastError.ActionName
+        File.WriteText File: strAuditLog TextToWrite: $'''%TimeStamp%,%gbl_strProcess%,%MachineName%,%UserName%,BSF003-Send Mail,INFO,UNSUCCESSFULLY SEND Mail,%EventDescription%,%EventLine%,,%EventName%''' AppendNewLine: True IfFileExists: File.IfFileExists.Append Encoding: File.FileEncoding.UTF8
+    END
+    **ENDREGION
+END FUNCTION
